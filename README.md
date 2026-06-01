@@ -1,4 +1,4 @@
-TODO:
-- free threading stuff?
-- convert taskflow to python
-- better build system?
+# PyTaskflow
+---
+Current support:
+- Executor, Task, Taskflow, and Future objects for basic usage
