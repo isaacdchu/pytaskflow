@@ -1,0 +1,30 @@
+[project]
+name = "pytaskflow"
+version = "0.1.0"
+description = "A high-performance parallel data loader for PyTorch powered by Taskflow and nanobind"
+readme = "README.md"
+
+# 1. Change this to standard PEP 440 versions
+requires-python = ">=3.14" 
+
+license = { text = "MIT" }
+classifiers = [
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: C++",
+]
+dependencies = [
+    "nanobind>=2.12.0",
+    "torch>=2.4.0",
+]
+
+[tool.scikit-build]
+build-dir = "build/{build_type}"
+cmake.args = ["-DNANOBIND_BUILD=ON"]
+
+[tool.scikit-build.wheel]
+# 2. THIS is the actual guardrail that enforces free-threading
+free-threaded = true
+
+[tool.uv]
+python-preference = "only-managed"
