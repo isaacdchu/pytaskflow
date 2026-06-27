@@ -7,46 +7,7 @@
 namespace nb = nanobind;
 using namespace nb::literals;
 
-std::vector<std::string> run_taskflow(std::string name = "default") {
-    nb::print("Starting taskflow");
-    nb::print(nb::str("{}").format(name));
-    tf::Executor executor;
-    tf::Taskflow taskflow;
-
-    nb::ft_mutex mu;
-    std::vector<std::string> outputs;
-
-    auto [A, B, C, D] = taskflow.emplace(
-        [&mu, &outputs]() {
-            nb::ft_lock_guard lock(mu);
-            outputs.push_back("TaskA");
-        },
-        [&mu, &outputs]() {
-            nb::ft_lock_guard lock(mu);
-            outputs.push_back("TaskB");
-        },
-        [&mu, &outputs]() {
-            nb::ft_lock_guard lock(mu);
-            outputs.push_back("TaskC");
-        },
-        [&mu, &outputs]() {
-            nb::ft_lock_guard lock(mu);
-            outputs.push_back("TaskD");
-        }
-    );
-    A.precede(B, C);
-    D.succeed(B, C);
-    nb::print("Running taskflow");
-    executor.run(taskflow).wait();
-    return outputs;
-}
-
 NB_MODULE(pytaskflow, m) {
-    m.def("run_taskflow",
-        &run_taskflow,
-        "name"_a = "default",
-        "Run a simple taskflow example with the given name."
-    );
     nb::class_<tf::Task>(m, "Task")
         .def(nb::init<>(),
             "Construct an empty Task that is not associated with any node in a Taskflow."
@@ -100,8 +61,7 @@ NB_MODULE(pytaskflow, m) {
             },
             "tasks"_a,
             "Set the predecessor tasks of this Task."
-        )
-        ;
+        );
     nb::class_<tf::Future<void>>(m, "Future")
         .def("cancel",
             &tf::Future<void>::cancel,
@@ -115,7 +75,44 @@ NB_MODULE(pytaskflow, m) {
             &tf::Future<void>::get,
             "Wait for the execution of the Taskflow associated with this Future to complete and return the result."
         );
-    nb::class_<tf::Taskflow>(m, "Taskflow")
+    nb::class_<tf::FlowBuilder>(m, "FlowBuilder")
+        .def("emplace",
+            [](tf::FlowBuilder &self, std::function<void()> f) {
+                std::function<void()> cb = [f]() { f(); };
+                return self.emplace(cb);
+            },
+            "callable"_a,
+            "Create a static task with the given callable target."
+        )
+        .def("emplace_runtime",
+            [](tf::FlowBuilder &self, std::function<void(tf::Runtime&)> f) {
+                std::function<void(tf::Runtime&)> cb = [f](tf::Runtime& r) { f(r); };
+                return self.emplace(cb);
+            },
+            "callable"_a,
+            "Create a runtime task with the given callable target."
+        )
+        .def("emplace_subflow",
+            [](tf::FlowBuilder &self, nb::object fn) {
+                return self.emplace([fn](tf::Subflow &sf) {
+                    nb::gil_scoped_acquire acq;
+                    nb::object py_sf = nb::cast(&sf);
+                    fn(py_sf);
+                });
+            },
+            "callable"_a,
+            "Create a dynamic/subflow task with the given callable target."
+        )
+        .def("emplace_condition",
+            [](tf::FlowBuilder &self, std::function<int()> f) {
+                std::function<int()> cb = [f]() { return f(); };
+                return self.emplace(cb);
+            },
+            "callable"_a,
+            "Create a condition task with the given callable target."
+        );
+    nb::class_<tf::Subflow, tf::FlowBuilder>(m, "Subflow");
+    nb::class_<tf::Taskflow, tf::FlowBuilder>(m, "Taskflow")
         .def(nb::init<const std::string&>(),
             "name"_a = "",
             "Construct a Taskflow with the given name."
@@ -127,12 +124,6 @@ NB_MODULE(pytaskflow, m) {
         .def("name",
             static_cast<const std::string & (tf::Taskflow::*)() const>(&tf::Taskflow::name),
             "Set the name of the Taskflow."
-        )
-        .def("emplace",
-            [](tf::Taskflow &self, std::function<void()> fn) {
-                return self.emplace([fn]() { fn(); });
-            },
-            "Add a new task to the Taskflow."
         );
     nb::class_<tf::Executor>(m, "Executor")
         .def(nb::init<>(),
